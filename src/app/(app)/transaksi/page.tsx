@@ -1,6 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  HandCoins,
+  ReceiptText,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { appendLedger } from "@/lib/ledger";
 import { formatRupiah, formatTanggal, todayISO } from "@/lib/format";
@@ -41,6 +49,9 @@ export default function TransaksiPage() {
 
   useEffect(() => {
     load();
+    // Aksi cepat dari Beranda: /transaksi?mode=pemasukan|pengeluaran
+    const preset = new URLSearchParams(window.location.search).get("mode");
+    if (preset === "pemasukan" || preset === "pengeluaran") setMode(preset);
   }, []);
 
   const visibleCategories = categories.filter((c) =>
@@ -65,11 +76,16 @@ export default function TransaksiPage() {
     const supabase = createClient();
 
     try {
+      // Pengeluaran dicatat atas nama staf yang sedang login.
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
       if (mode === "pengeluaran") {
         const { data: expense, error: expError } = await supabase
           .from("expenses")
           .insert({
-            user_id: null, // tanpa login: pengeluaran tidak terikat user mana pun
+            user_id: user?.id ?? null,
             category_id: categoryId ? Number(categoryId) : null,
             title: title.trim(),
             amount: nominal,
@@ -117,44 +133,49 @@ export default function TransaksiPage() {
     }
   }
 
-  if (loading) return <p className="text-sm text-zinc-500">Memuat transaksi...</p>;
+  if (loading)
+    return (
+      <div className="space-y-4">
+        <div className="h-8 w-36 animate-pulse rounded-xl bg-surface-2" />
+        <div className="h-80 animate-pulse rounded-2xl bg-surface-2" />
+      </div>
+    );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-bold">Transaksi</h1>
-        <p className="text-sm text-zinc-500">
+        <h1 className="font-display text-[22px] font-bold tracking-[-0.01em]">Transaksi</h1>
+        <p className="mt-0.5 text-sm text-ink-2">
           Catat pengeluaran operasional dan pemasukan lain di luar kasir.
           Semuanya langsung masuk buku kas.
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      {/* Segmented control mode */}
+      <div className="grid grid-cols-2 gap-1 rounded-full bg-surface-2 p-1">
         <button
           onClick={() => setMode("pengeluaran")}
-          className={`rounded-lg py-2.5 text-sm font-semibold ${
-            mode === "pengeluaran"
-              ? "bg-rose-600 text-white"
-              : "bg-white text-zinc-600 shadow-sm"
+          className={`inline-flex h-11 items-center justify-center gap-2 rounded-full text-sm font-semibold transition active:scale-[0.98] ${
+            mode === "pengeluaran" ? "bg-white text-ink" : "text-ink-2"
           }`}
         >
+          <TrendingDown className="h-4 w-4 text-keluar" />
           Pengeluaran
         </button>
         <button
           onClick={() => setMode("pemasukan")}
-          className={`rounded-lg py-2.5 text-sm font-semibold ${
-            mode === "pemasukan"
-              ? "bg-emerald-600 text-white"
-              : "bg-white text-zinc-600 shadow-sm"
+          className={`inline-flex h-11 items-center justify-center gap-2 rounded-full text-sm font-semibold transition active:scale-[0.98] ${
+            mode === "pemasukan" ? "bg-white text-ink" : "text-ink-2"
           }`}
         >
+          <TrendingUp className="h-4 w-4 text-masuk" />
           Pemasukan Lain
         </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
+      <form onSubmit={handleSubmit} className="card space-y-4">
         <div>
-          <label htmlFor="t-title" className="text-sm font-medium">
+          <label htmlFor="t-title" className="label">
             {mode === "pengeluaran" ? "Nama Pengeluaran" : "Keterangan Pemasukan"}
           </label>
           <input
@@ -162,7 +183,7 @@ export default function TransaksiPage() {
             required
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-900"
+            className="input"
             placeholder={
               mode === "pengeluaran" ? "cth. Bayar sewa toko bulan ini" : "cth. Penjualan via WhatsApp"
             }
@@ -170,12 +191,12 @@ export default function TransaksiPage() {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label htmlFor="t-cat" className="text-sm font-medium">Kategori</label>
+            <label htmlFor="t-cat" className="label">Kategori</label>
             <select
               id="t-cat"
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900"
+              className="input"
             >
               <option value="">— Pilih kategori —</option>
               {visibleCategories.map((c) => (
@@ -186,18 +207,18 @@ export default function TransaksiPage() {
             </select>
           </div>
           <div>
-            <label htmlFor="t-date" className="text-sm font-medium">Tanggal</label>
+            <label htmlFor="t-date" className="label">Tanggal</label>
             <input
               id="t-date"
               type="date"
               required
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-900"
+              className="input"
             />
           </div>
           <div>
-            <label htmlFor="t-amount" className="text-sm font-medium">Nominal (Rp)</label>
+            <label htmlFor="t-amount" className="label">Nominal (Rp)</label>
             <input
               id="t-amount"
               type="number"
@@ -205,17 +226,17 @@ export default function TransaksiPage() {
               required
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-900"
+              className="input"
               placeholder="0"
             />
           </div>
           <div>
-            <label htmlFor="t-method" className="text-sm font-medium">Metode</label>
+            <label htmlFor="t-method" className="label">Metode</label>
             <select
               id="t-method"
               value={method}
               onChange={(e) => setMethod(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900"
+              className="input"
             >
               {PAYMENT_METHODS.map((m) => (
                 <option key={m} value={m}>
@@ -226,55 +247,88 @@ export default function TransaksiPage() {
           </div>
         </div>
         <div>
-          <label htmlFor="t-notes" className="text-sm font-medium">Catatan (opsional)</label>
+          <label htmlFor="t-notes" className="label">Catatan (opsional)</label>
           <input
             id="t-notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-900"
+            className="input"
             placeholder="Catatan tambahan"
           />
         </div>
         {error && (
-          <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>
+          <p className="rounded-xl bg-keluar-tint px-3.5 py-2.5 text-sm text-keluar">{error}</p>
         )}
         {success && (
-          <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</p>
+          <p className="rounded-xl bg-masuk-tint px-3.5 py-2.5 text-sm text-masuk">{success}</p>
         )}
         <button
           type="submit"
           disabled={saving}
-          className={`w-full rounded-lg py-2.5 text-sm font-semibold text-white disabled:opacity-50 ${
-            mode === "pengeluaran" ? "bg-rose-600" : "bg-emerald-600"
-          }`}
+          className="btn-primary h-12 w-full text-[15px]"
         >
           {saving ? "Menyimpan..." : mode === "pengeluaran" ? "Simpan Pengeluaran" : "Simpan Pemasukan"}
         </button>
       </form>
 
-      <section className="rounded-2xl bg-white p-4 shadow-sm">
-        <h2 className="font-semibold">Riwayat Terakhir</h2>
-        {recent.length === 0 ? (
-          <p className="mt-2 text-sm text-zinc-400">Belum ada transaksi tercatat.</p>
-        ) : (
-          <ul className="mt-3 divide-y divide-zinc-100">
-            {recent.map((r) => (
-              <li key={r.id} className="flex items-center justify-between py-2.5">
-                <div>
-                  <p className="text-sm font-medium">{r.description}</p>
-                  <p className="text-xs text-zinc-400">{formatTanggal(r.transaction_date)}</p>
-                </div>
-                <p
-                  className={`money text-sm font-semibold ${
-                    r.type === "in" ? "text-emerald-600" : "text-rose-600"
-                  }`}
-                >
-                  {r.type === "in" ? "+" : "−"} {formatRupiah(r.amount)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
+      <section>
+        <h2 className="mb-3 font-display text-base font-semibold">Riwayat Terakhir</h2>
+        <div className="card !p-0">
+          {recent.length === 0 ? (
+            <div className="flex flex-col items-center px-4 py-8 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-2 text-ink-3">
+                <ReceiptText className="h-6 w-6" strokeWidth={1.8} />
+              </span>
+              <p className="mt-3 text-sm text-ink-2">Belum ada transaksi tercatat.</p>
+            </div>
+          ) : (
+            <ul>
+              {recent.map((r, i) => (
+                <li key={r.id} className="relative">
+                  {i > 0 && (
+                    <span className="absolute left-[68px] right-0 top-0 h-px bg-line" />
+                  )}
+                  <div className="flex min-h-16 items-center gap-3 px-4 py-3">
+                    <span
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                        r.ref_type === "sale"
+                          ? "bg-primary-tint text-primary-pressed"
+                          : r.ref_type === "manual_income"
+                            ? "bg-masuk-tint text-masuk"
+                            : r.ref_type === "expense"
+                              ? "bg-keluar-tint text-keluar"
+                              : r.type === "in"
+                                ? "bg-masuk-tint text-masuk"
+                                : "bg-keluar-tint text-keluar"
+                      }`}
+                    >
+                      {r.ref_type === "manual_income" ? (
+                        <HandCoins className="h-5 w-5" strokeWidth={2} />
+                      ) : r.ref_type === "sale" ? (
+                        <ReceiptText className="h-5 w-5" strokeWidth={2} />
+                      ) : r.type === "in" ? (
+                        <ArrowDownLeft className="h-5 w-5" strokeWidth={2} />
+                      ) : (
+                        <ArrowUpRight className="h-5 w-5" strokeWidth={2} />
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] font-semibold">{r.description}</p>
+                      <p className="text-xs text-ink-2">{formatTanggal(r.transaction_date)}</p>
+                    </div>
+                    <p
+                      className={`money shrink-0 text-[15px] font-semibold ${
+                        r.type === "in" ? "text-masuk" : "text-keluar"
+                      }`}
+                    >
+                      {r.type === "in" ? "+" : "−"} {formatRupiah(r.amount)}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
     </div>
   );

@@ -1,19 +1,46 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  CheckCircle2,
+  Minus,
+  Plus,
+  Search,
+  Shirt,
+  ShoppingCart,
+  X,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { appendLedger } from "@/lib/ledger";
 import { formatRupiah, todayISO } from "@/lib/format";
-import { PAYMENT_METHODS, type Product } from "@/lib/types";
+import { PAYMENT_METHODS, type Category, type Product } from "@/lib/types";
 
 interface CartItem {
   product: Product;
   qty: number;
 }
 
+interface Receipt {
+  invoiceNo: string;
+  total: number;
+  paid: number;
+  change: number;
+  method: string;
+}
+
+const CASH_CHIPS: { label: string; value: number | "pas" }[] = [
+  { label: "Uang pas", value: "pas" },
+  { label: "20 rb", value: 20000 },
+  { label: "50 rb", value: 50000 },
+  { label: "100 rb", value: 100000 },
+  { label: "200 rb", value: 200000 },
+];
+
 export default function KasirPage() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [search, setSearch] = useState("");
+  const [category, setCategory] = useState<string>("Semua");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState("");
   const [discount, setDiscount] = useState(0);
@@ -22,21 +49,21 @@ export default function KasirPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<{
-    invoiceNo: string;
-    total: number;
-    paid: number;
-    change: number;
-    method: string;
-  } | null>(null);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   async function loadProducts() {
     const supabase = createClient();
-    const { data } = await supabase
-      .from("products")
-      .select("*")
-      .order("name");
+    const [{ data }, { data: cats }] = await Promise.all([
+      supabase.from("products").select("*").order("name"),
+      supabase
+        .from("categories")
+        .select("*")
+        .eq("type", "produk")
+        .order("name"),
+    ]);
     setProducts((data ?? []) as Product[]);
+    setCategories((cats ?? []) as Category[]);
     setLoading(false);
   }
 
@@ -44,14 +71,29 @@ export default function KasirPage() {
     loadProducts();
   }, []);
 
+  const categoryName = (p: Product) =>
+    categories.find((c) => c.id === p.category_id)?.name ?? null;
+
+  const chips = useMemo(() => {
+    const used = new Set(
+      products.map((p) => categoryName(p)).filter(Boolean) as string[]
+    );
+    return ["Semua", ...categories.map((c) => c.name).filter((n) => used.has(n))];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, categories]);
+
   const filtered = useMemo(
     () =>
-      products.filter((p) =>
-        `${p.name} ${p.sku} ${p.size ?? ""} ${p.color ?? ""}`
+      products.filter((p) => {
+        const matchesSearch = `${p.name} ${p.sku} ${p.size ?? ""} ${p.color ?? ""}`
           .toLowerCase()
-          .includes(search.toLowerCase())
-      ),
-    [products, search]
+          .includes(search.toLowerCase());
+        const matchesCategory =
+          category === "Semua" || categoryName(p) === category;
+        return matchesSearch && matchesCategory;
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [products, search, category, categories]
   );
 
   const subtotal = cart.reduce(
@@ -59,6 +101,7 @@ export default function KasirPage() {
     0
   );
   const grandTotal = Math.max(subtotal - discount, 0);
+  const totalQty = cart.reduce((acc, item) => acc + item.qty, 0);
   const change = paymentMethod === "Tunai" ? amountPaid - grandTotal : 0;
 
   // Untuk metode non-tunai, jumlah bayar dianggap pas.
@@ -89,6 +132,10 @@ export default function KasirPage() {
     );
   }
 
+  function qtyInCart(productId: number) {
+    return cart.find((i) => i.product.id === productId)?.qty ?? 0;
+  }
+
   async function handleCheckout() {
     setError(null);
     if (cart.length === 0) {
@@ -105,6 +152,10 @@ export default function KasirPage() {
     const today = todayISO();
 
     try {
+      // Penjualan dicatat atas nama kasir yang sedang login.
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       // Nomor invoice: INV-YYYYMMDD-XXX (XXX = urutan penjualan hari ini)
       const { count } = await supabase
         .from("sales")
@@ -117,7 +168,7 @@ export default function KasirPage() {
         .from("sales")
         .insert({
           invoice_no: invoiceNo,
-          user_id: null, // tanpa login: penjualan tidak terikat user mana pun
+          user_id: user?.id ?? null,
           customer_name: customerName.trim() || null,
           subtotal,
           discount,
@@ -185,167 +236,112 @@ export default function KasirPage() {
     }
   }
 
-  if (loading) return <p className="text-sm text-zinc-500">Memuat produk...</p>;
+  function resetAfterSuccess() {
+    setReceipt(null);
+    setSheetOpen(false);
+    setError(null);
+  }
 
-  return (
-    <div className="space-y-4">
+  // ---------- Panel keranjang & pembayaran (dipakai di aside desktop & sheet mobile) ----------
+  function cartPanel() {
+    return (
       <div>
-        <h1 className="text-xl font-bold">Kasir</h1>
-        <p className="text-sm text-zinc-500">
-          Pilih produk, lalu selesaikan pembayaran. Stok, HPP, dan buku kas
-          tercatat otomatis.
-        </p>
-      </div>
-
-      {receipt && (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-          <p className="font-semibold text-emerald-900">Penjualan tersimpan</p>
-          <dl className="mt-2 space-y-1 text-sm text-emerald-800">
-            <div className="flex justify-between">
-              <dt>Nomor invoice</dt>
-              <dd className="font-semibold">{receipt.invoiceNo}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt>Total</dt>
-              <dd className="money font-semibold">{formatRupiah(receipt.total)}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt>Dibayar ({receipt.method})</dt>
-              <dd className="money">{formatRupiah(receipt.paid)}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt>Kembalian</dt>
-              <dd className="money font-semibold">{formatRupiah(receipt.change)}</dd>
-            </div>
-          </dl>
-          <button
-            onClick={() => setReceipt(null)}
-            className="mt-3 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white"
-          >
-            Tutup
-          </button>
-        </div>
-      )}
-
-      <input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Cari produk (nama, SKU, ukuran, warna)..."
-        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-900"
-      />
-
-      {products.length === 0 ? (
-        <p className="rounded-2xl bg-white p-4 text-sm text-zinc-500 shadow-sm">
-          Belum ada produk. Tambahkan produk terlebih dahulu di menu Produk.
-        </p>
-      ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {filtered.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => addToCart(p)}
-              disabled={p.stock <= 0}
-              className="rounded-2xl bg-white p-3 text-left shadow-sm disabled:opacity-40"
-            >
-              <p className="text-sm font-semibold leading-snug">{p.name}</p>
-              <p className="mt-0.5 text-xs text-zinc-400">
-                {[p.size, p.color].filter(Boolean).join(" • ") || p.sku}
-              </p>
-              <p className="money mt-2 text-sm font-bold">{formatRupiah(p.sale_price)}</p>
-              <p className="text-xs text-zinc-400">Stok: {p.stock}</p>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <section className="rounded-2xl bg-white p-4 shadow-sm">
-        <h2 className="font-semibold">Keranjang</h2>
         {cart.length === 0 ? (
-          <p className="mt-2 text-sm text-zinc-400">Keranjang kosong.</p>
+          <p className="text-sm text-ink-2">
+            Keranjang kosong — ketuk produk untuk menambahkan.
+          </p>
         ) : (
-          <ul className="mt-3 space-y-3">
+          <ul className="space-y-3">
             {cart.map((item) => (
-              <li key={item.product.id} className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{item.product.name}</p>
-                  <p className="money text-xs text-zinc-400">
+              <li key={item.product.id} className="flex items-center gap-3">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-ink-3">
+                  <Shirt className="h-5 w-5" strokeWidth={1.8} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">
+                    {item.product.name}
+                  </p>
+                  <p className="money text-xs text-ink-2">
                     {formatRupiah(item.product.sale_price)} / pcs
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 items-center gap-1">
                   <button
                     onClick={() => setQty(item.product.id, item.qty - 1)}
-                    className="h-8 w-8 rounded-lg bg-zinc-100 text-lg leading-none"
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-ink transition hover:bg-line active:scale-95"
                     aria-label="Kurangi"
                   >
-                    −
+                    <Minus className="h-4 w-4" />
                   </button>
-                  <span className="w-6 text-center text-sm font-semibold">{item.qty}</span>
+                  <span className="money w-7 text-center text-sm font-bold">
+                    {item.qty}
+                  </span>
                   <button
                     onClick={() => setQty(item.product.id, item.qty + 1)}
-                    className="h-8 w-8 rounded-lg bg-zinc-100 text-lg leading-none"
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-ink transition hover:bg-line active:scale-95"
                     aria-label="Tambah"
                   >
-                    +
+                    <Plus className="h-4 w-4" />
                   </button>
-                  <span className="money w-24 text-right text-sm font-semibold">
-                    {formatRupiah(item.qty * item.product.sale_price)}
-                  </span>
                 </div>
+                <span className="money w-[92px] shrink-0 text-right text-sm font-bold">
+                  {formatRupiah(item.qty * item.product.sale_price)}
+                </span>
               </li>
             ))}
           </ul>
         )}
 
-        <div className="mt-4 space-y-3 border-t border-zinc-100 pt-4">
+        <div className="mt-5 space-y-4 border-t border-line pt-5">
           <div>
-            <label htmlFor="customer" className="text-sm font-medium">
+            <label htmlFor="customer" className="label">
               Nama Pelanggan (opsional)
             </label>
             <input
               id="customer"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-900"
+              className="input"
               placeholder="Umum"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="discount" className="text-sm font-medium">
-                Diskon (Rp)
-              </label>
-              <input
-                id="discount"
-                type="number"
-                min={0}
-                value={discount || ""}
-                onChange={(e) => setDiscount(Number(e.target.value) || 0)}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-900"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <label htmlFor="method" className="text-sm font-medium">
-                Metode Bayar
-              </label>
-              <select
-                id="method"
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900"
-              >
-                {PAYMENT_METHODS.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
+          <div>
+            <label htmlFor="discount" className="label">
+              Diskon (Rp)
+            </label>
+            <input
+              id="discount"
+              type="number"
+              min={0}
+              value={discount || ""}
+              onChange={(e) => setDiscount(Number(e.target.value) || 0)}
+              className="input"
+              placeholder="0"
+            />
+          </div>
+
+          <div>
+            <span className="label">Metode Bayar</span>
+            <div className="grid grid-cols-4 gap-1 rounded-full bg-surface-2 p-1">
+              {PAYMENT_METHODS.map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setPaymentMethod(m)}
+                  className={`rounded-full px-1 py-2 text-sm transition ${
+                    paymentMethod === m
+                      ? "bg-white font-semibold text-ink"
+                      : "font-medium text-ink-2"
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
             </div>
           </div>
+
           {paymentMethod === "Tunai" && (
             <div>
-              <label htmlFor="paid" className="text-sm font-medium">
+              <label htmlFor="paid" className="label">
                 Uang Diterima (Rp)
               </label>
               <input
@@ -354,48 +350,324 @@ export default function KasirPage() {
                 min={0}
                 value={amountPaid || ""}
                 onChange={(e) => setAmountPaid(Number(e.target.value) || 0)}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-900"
+                className="input money h-12 text-base"
                 placeholder="0"
               />
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {CASH_CHIPS.map((chip) => (
+                  <button
+                    key={chip.label}
+                    onClick={() =>
+                      setAmountPaid(chip.value === "pas" ? grandTotal : chip.value)
+                    }
+                    className="rounded-full border border-line bg-white px-3 py-1.5 text-[13px] font-medium text-ink-2 transition hover:border-ink-3 active:scale-95"
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
-          <dl className="space-y-1 text-sm">
+          <dl className="space-y-1.5 text-sm">
             <div className="flex justify-between">
-              <dt className="text-zinc-500">Subtotal</dt>
+              <dt className="text-ink-2">Subtotal</dt>
               <dd className="money">{formatRupiah(subtotal)}</dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-zinc-500">Diskon</dt>
+              <dt className="text-ink-2">Diskon</dt>
               <dd className="money">− {formatRupiah(discount)}</dd>
             </div>
-            <div className="flex justify-between text-base font-bold">
+            <div className="flex justify-between border-t border-line pt-2 text-[17px] font-bold">
               <dt>Total</dt>
               <dd className="money">{formatRupiah(grandTotal)}</dd>
             </div>
-            {paymentMethod === "Tunai" && amountPaid > 0 && (
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Kembalian</dt>
-                <dd className="money font-semibold">
-                  {formatRupiah(Math.max(change, 0))}
-                </dd>
-              </div>
-            )}
           </dl>
 
+          {paymentMethod === "Tunai" && cart.length > 0 && (
+            <div className="rounded-2xl bg-surface-2 px-4 py-3">
+              <p className="text-xs font-medium text-ink-2">Kembalian</p>
+              <p
+                className={`money font-display text-[28px] font-bold leading-tight ${
+                  change >= 0 ? "text-masuk" : "text-keluar"
+                }`}
+              >
+                {change >= 0
+                  ? formatRupiah(change)
+                  : `Kurang ${formatRupiah(Math.abs(change))}`}
+              </p>
+            </div>
+          )}
+
           {error && (
-            <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>
+            <p className="rounded-xl bg-keluar-tint px-3.5 py-2.5 text-sm text-keluar">
+              {error}
+            </p>
           )}
 
           <button
             onClick={handleCheckout}
             disabled={saving || cart.length === 0}
-            className="w-full rounded-lg bg-zinc-900 py-3 text-sm font-semibold text-white disabled:opacity-50"
+            className="btn-primary h-[52px] w-full text-[15px]"
           >
-            {saving ? "Menyimpan..." : "Simpan Penjualan"}
+            {saving ? "Memproses..." : `Selesai · ${formatRupiah(grandTotal)}`}
           </button>
         </div>
-      </section>
+      </div>
+    );
+  }
+
+  // ---------- Panel sukses ----------
+  function successPanel() {
+    if (!receipt) return null;
+    return (
+      <div className="text-center">
+        <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-masuk-tint">
+          <CheckCircle2 className="h-8 w-8 text-masuk" strokeWidth={2} />
+        </span>
+        <h3 className="mt-4 font-display text-lg font-bold">
+          Pembayaran Berhasil
+        </h3>
+        <p className="mt-0.5 text-sm text-ink-2">{receipt.invoiceNo}</p>
+        <dl className="mt-5 space-y-2 text-left text-sm">
+          <div className="flex justify-between">
+            <dt className="text-ink-2">Total</dt>
+            <dd className="money font-semibold">{formatRupiah(receipt.total)}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-ink-2">Dibayar ({receipt.method})</dt>
+            <dd className="money">{formatRupiah(receipt.paid)}</dd>
+          </div>
+          <div className="flex justify-between border-t border-line pt-2">
+            <dt className="text-ink-2">Kembalian</dt>
+            <dd className="money font-display text-lg font-bold text-masuk">
+              {formatRupiah(receipt.change)}
+            </dd>
+          </div>
+        </dl>
+        <button
+          onClick={resetAfterSuccess}
+          className="btn-primary mt-6 h-[52px] w-full text-[15px]"
+        >
+          Transaksi Baru
+        </button>
+      </div>
+    );
+  }
+
+  if (loading)
+    return (
+      <div className="space-y-4">
+        <div className="h-8 w-32 animate-pulse rounded-xl bg-surface-2" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-44 animate-pulse rounded-2xl bg-surface-2" />
+          ))}
+        </div>
+      </div>
+    );
+
+  return (
+    <div>
+      <div>
+        <h1 className="font-display text-[22px] font-bold tracking-[-0.01em]">
+          Kasir
+        </h1>
+        <p className="mt-0.5 text-sm text-ink-2">
+          Ketuk produk untuk menambahkan. Stok, HPP, dan buku kas tercatat
+          otomatis.
+        </p>
+      </div>
+
+      <div className="lg:flex lg:items-start lg:gap-6">
+        {/* Kolom katalog */}
+        <div className="min-w-0 flex-1">
+          {/* Zona sticky: pencarian + chip kategori */}
+          <div className="sticky top-14 z-20 -mx-4 bg-paper/95 px-4 py-2.5 backdrop-blur lg:top-0 lg:mx-0 lg:px-0">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-ink-3" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Cari produk (nama, SKU, ukuran, warna)..."
+                className="input h-12 pl-11"
+              />
+            </div>
+            {chips.length > 1 && (
+              <div className="mt-2.5 flex gap-1.5 overflow-x-auto pb-0.5">
+                {chips.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setCategory(c)}
+                    className={`h-9 shrink-0 rounded-full px-3.5 text-sm font-medium transition active:scale-95 ${
+                      category === c
+                        ? "bg-ink text-white"
+                        : "border border-line bg-white text-ink-2"
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {products.length === 0 ? (
+            <div className="card mt-2 flex flex-col items-center py-10 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-2 text-ink-3">
+                <ShoppingCart className="h-6 w-6" strokeWidth={1.8} />
+              </span>
+              <p className="mt-3 max-w-xs text-sm text-ink-2">
+                Belum ada produk. Tambahkan produk terlebih dahulu di menu
+                Produk.
+              </p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <p className="card mt-2 py-8 text-center text-sm text-ink-2">
+              Tidak ada produk yang cocok dengan pencarian/kategori ini.
+            </p>
+          ) : (
+            <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+              {filtered.map((p) => {
+                const qty = qtyInCart(p.id);
+                const habis = p.stock <= 0;
+                const menipis = !habis && p.stock <= p.min_stock;
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => !habis && addToCart(p)}
+                    className={`card !p-2.5 text-left transition active:scale-[0.98] ${
+                      habis ? "opacity-60" : "cursor-pointer"
+                    }`}
+                  >
+                    <div className="flex aspect-[4/3] items-center justify-center rounded-xl bg-surface-2">
+                      <Shirt className="h-8 w-8 text-ink-3" strokeWidth={1.5} />
+                    </div>
+                    <p className="mt-2 line-clamp-2 min-h-10 text-sm font-semibold leading-snug">
+                      {p.name}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-ink-2">
+                      {[p.size, p.color].filter(Boolean).join(" • ") || p.sku}
+                    </p>
+                    <p className="money mt-1.5 text-[15px] font-bold">
+                      {formatRupiah(p.sale_price)}
+                    </p>
+                    <div className="mt-2 flex items-center justify-between gap-1">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                          habis
+                            ? "bg-keluar-tint text-keluar"
+                            : menipis
+                              ? "bg-warn-tint text-warn"
+                              : "bg-surface-2 text-ink-2"
+                        }`}
+                      >
+                        {habis ? "Habis" : menipis ? `Sisa ${p.stock}` : `Stok ${p.stock}`}
+                      </span>
+                      {qty > 0 && (
+                        <span className="money inline-flex items-center gap-1 rounded-full bg-primary-tint px-2 py-0.5 text-xs font-bold text-primary-pressed">
+                          {qty} di keranjang
+                        </span>
+                      )}
+                    </div>
+                    {qty > 0 && (
+                      <div
+                        className="mt-2 flex items-center justify-between border-t border-line pt-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          onClick={() => setQty(p.id, qty - 1)}
+                          className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 transition hover:bg-line active:scale-95"
+                          aria-label="Kurangi"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <span className="money text-sm font-bold">{qty}</span>
+                        <button
+                          onClick={() => addToCart(p)}
+                          className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 transition hover:bg-line active:scale-95"
+                          aria-label="Tambah"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Aside desktop: keranjang / sukses */}
+        <aside className="sticky top-6 mt-4 hidden w-[380px] shrink-0 lg:mt-0 lg:block">
+          <div className="card !p-5">
+            {receipt ? (
+              successPanel()
+            ) : (
+              <>
+                <h2 className="mb-4 flex items-center gap-2 font-display text-base font-semibold">
+                  <ShoppingCart className="h-5 w-5 text-ink-3" />
+                  Keranjang
+                </h2>
+                {cartPanel()}
+              </>
+            )}
+          </div>
+        </aside>
+      </div>
+
+      {/* Bar keranjang sticky (mobile) */}
+      {cart.length > 0 && !sheetOpen && (
+        <div className="fixed inset-x-0 bottom-[calc(96px+env(safe-area-inset-bottom))] z-30 px-3 lg:hidden">
+          <div className="flex items-center justify-between rounded-[20px] border border-line bg-white py-3 pl-4 pr-3 shadow-float">
+            <div>
+              <p className="text-xs text-ink-2">{totalQty} item</p>
+              <p className="money text-[17px] font-bold leading-tight">
+                {formatRupiah(grandTotal)}
+              </p>
+            </div>
+            <button
+              onClick={() => setSheetOpen(true)}
+              className="btn-primary h-12 px-6 text-[15px]"
+            >
+              Bayar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Sheet keranjang & pembayaran (mobile) */}
+      {sheetOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div
+            className="absolute inset-0 bg-ink/40"
+            onClick={() => !receipt && setSheetOpen(false)}
+          />
+          <div className="absolute inset-x-0 bottom-0 max-h-[90vh] overflow-y-auto rounded-t-3xl bg-white p-5 pb-[max(20px,env(safe-area-inset-bottom))]">
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-line" />
+            {receipt ? (
+              successPanel()
+            ) : (
+              <>
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="font-display text-base font-semibold">
+                    Keranjang & Pembayaran
+                  </h2>
+                  <button
+                    onClick={() => setSheetOpen(false)}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-ink-2"
+                    aria-label="Tutup"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                {cartPanel()}
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

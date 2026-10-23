@@ -1,14 +1,24 @@
 // Helper format Bahasa Indonesia untuk seluruh aplikasi.
 
-const rupiahFormatter = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
+const numberFormatter = new Intl.NumberFormat("id-ID", {
   minimumFractionDigits: 0,
   maximumFractionDigits: 0,
 });
 
+// Format baku aplikasi: "Rp 1.250.000" (spasi, tanpa desimal).
 export function formatRupiah(value: number | null | undefined): string {
-  return rupiahFormatter.format(value ?? 0);
+  return `Rp ${numberFormatter.format(value ?? 0)}`;
+}
+
+// Format ringkas untuk sumbu grafik & tooltip: "250 rb", "1,2 jt".
+export function formatRingkas(value: number): string {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) {
+    const jt = value / 1_000_000;
+    return `${jt.toLocaleString("id-ID", { maximumFractionDigits: 1 })} jt`;
+  }
+  if (abs >= 1_000) return `${Math.round(value / 1_000)} rb`;
+  return `${value}`;
 }
 
 export function formatTanggal(iso: string | null | undefined): string {

@@ -10,14 +10,15 @@ Dibangun mengikuti dokumen *Perancangan Aplikasi Sistem Pencatatan Keuangan pada
 | --- | --- |
 | Framework | Next.js (App Router) + React + TypeScript |
 | Tampilan | Tailwind CSS, mobile-first (bottom tab bar di HP, sidebar di desktop) |
-| Database | Supabase (PostgreSQL), Row Level Security aktif dengan policy terbuka (tanpa login) |
-| Akses data | `@supabase/supabase-js` + `@supabase/ssr` (anon key, tanpa sesi login) |
+| Database | Supabase (PostgreSQL), Row Level Security aktif — policy khusus user login (role `authenticated`) |
+| Autentikasi | Supabase Auth (email & kata sandi), sesi dijaga `@supabase/ssr` + proxy Next.js |
+| Akses data | `@supabase/supabase-js` + `@supabase/ssr` (anon key + sesi login staf) |
 | Deploy | Vercel |
 
 ## Fitur
 
-- **Tanpa login** — buka alamat web, langsung masuk ke Beranda. Tidak ada halaman masuk/daftar dan tidak ada akun staf; semua halaman terbuka langsung
-- **Beranda** — saldo kas dari buku kas, pemasukan & pengeluaran hari ini dan bulan ini, laba bersih bulan ini, transaksi terakhir, peringatan stok menipis, panduan 3 langkah saat data masih kosong
+- **Login staf** — halaman Masuk & Daftar memakai Supabase Auth (email + kata sandi). Hanya staf yang sudah login yang bisa membuka aplikasi; halaman lain otomatis dialihkan ke halaman masuk, dan data dilindungi RLS khusus user login
+- **Beranda** — kartu saldo kas dari buku kas, pemasukan & pengeluaran hari ini, statistik bulan ini (penjualan, pemasukan, pengeluaran, laba bersih), grafik arus kas 7 hari, transaksi terakhir, peringatan stok menipis, panduan 3 langkah saat data masih kosong
 - **Kasir** — pilih produk, keranjang, diskon, metode bayar (Tunai / QRIS / Transfer / E-Wallet), kembalian otomatis, nomor invoice `INV-YYYYMMDD-XXX`; stok berkurang otomatis, HPP tercatat dari snapshot harga modal, jurnal kas tertulis otomatis
 - **Transaksi** — catat pengeluaran operasional berkategori dan pemasukan lain; keduanya langsung masuk buku kas
 - **Produk** — tambah / ubah / hapus produk, harga modal & jual, stok, batas stok menipis
@@ -25,7 +26,7 @@ Dibangun mengikuti dokumen *Perancangan Aplikasi Sistem Pencatatan Keuangan pada
 - **Laporan** — laba rugi (Penjualan − HPP − Pengeluaran + Pemasukan Lain) dan arus kas per bulan, pengeluaran dirinci per kategori
 - **PWA** — bisa dipasang ke layar utama HP (manifest + ikon + service worker sederhana)
 
-> ⚠️ **Catatan jujur soal keamanan:** karena aplikasi ini tanpa login, **siapa pun yang tahu alamat web aplikasi ini bisa membuka dan mengubah data keuangan toko** (anon key Supabase memang ikut terbawa di aplikasi web dan bisa dilihat publik). Ini pilihan yang disengaja supaya staf toko tidak repot login, dan cocok untuk **pemakaian internal toko**. Karena itu: **jangan sebarkan alamat webnya ke publik** (jangan diposting di media sosial, jangan dicantumkan di materi promosi), dan perlakukan alamatnya seperti kunci toko.
+> 🔒 **Catatan keamanan:** aplikasi ini memakai login Supabase Auth. Data keuangan hanya bisa dibaca/diubah oleh akun staf yang sudah login — Row Level Security di database menolak semua akses tanpa sesi (`authenticated`). Anon key yang terbawa di aplikasi web hanya berfungsi untuk proses login itu sendiri. Tetap jaga kerahasiaan kata sandi staf, dan nonaktifkan akun staf yang sudah tidak bekerja di toko lewat dashboard Supabase (**Authentication → Users**).
 
 ## Struktur Folder
 
@@ -36,18 +37,24 @@ dankas/
 │   ├── icons/                 # ikon aplikasi (placeholder, silakan ganti logo asli)
 │   └── sw.js                  # service worker sederhana
 ├── supabase/
-│   ├── schema.sql             # 11 tabel + RLS policy terbuka (tanpa login)
+│   ├── schema.sql             # 11 tabel + RLS policy khusus user login (authenticated)
 │   ├── seed.sql               # HANYA kategori bawaan (tanpa data contoh)
-│   └── migration-002-no-auth.sql # untuk instalasi LAMA: ganti policy login → terbuka (jalankan sekali)
+│   ├── seed-contoh.sql        # OPSIONAL: data demo Oktober 2026 (lihat "Data Contoh")
+│   ├── migration-002-no-auth.sql    # riwayat: policy login → terbuka (sudah tidak dipakai)
+│   └── migration-003-restore-auth.sql # untuk instalasi live yang terlanjur terbuka: kembalikan policy khusus login (jalankan sekali)
 └── src/
+    ├── proxy.ts               # penjaga route (Next.js proxy): belum login → /login
     ├── lib/
-    │   ├── supabase/          # client browser & server (anon key, tanpa sesi)
+    │   ├── supabase/          # client browser, server & middleware sesi (@supabase/ssr)
+    │   ├── auth-redirect.ts   # arahkan user setelah login sesuai peran (kasir → Kasir)
     │   ├── ledger.ts          # hitung saldo & tulis jurnal buku kas
     │   ├── format.ts          # format Rupiah & tanggal (id-ID)
     │   └── types.ts           # tipe data tabel
-    ├── components/            # AppShell (navigasi), ServiceWorkerRegister
+    ├── components/            # AppShell (navigasi + info user), AuthShell (kerangka login), ServiceWorkerRegister
     └── app/
-        ├── page.tsx           # akar web → langsung alihkan ke /dashboard
+        ├── page.tsx           # akar web → alihkan ke /dashboard (proxy menjaga sesi)
+        ├── login/             # halaman masuk (Supabase Auth)
+        ├── register/          # halaman daftar akun staf
         └── (app)/             # dashboard, kasir, transaksi, produk, buku-kas, laporan
 ```
 
@@ -67,11 +74,12 @@ dankas/
 ### 2. Jalankan Skema Database
 
 1. Di dashboard Supabase, buka menu **SQL Editor** → **New query**.
-2. Buka file `supabase/schema.sql` dari proyek ini, salin **seluruh isinya**, tempel ke SQL Editor, lalu klik **Run**. Tunggu sampai muncul pesan sukses (11 tabel + policy RLS dibuat). Skema ini **sudah termasuk policy terbuka (tanpa login)**, jadi instalasi baru langsung jalan — tidak ada langkah tambahan.
+2. Buka file `supabase/schema.sql` dari proyek ini, salin **seluruh isinya**, tempel ke SQL Editor, lalu klik **Run**. Tunggu sampai muncul pesan sukses (11 tabel + policy RLS dibuat). Skema ini **sudah termasuk policy khusus user login** ("staf login boleh ...", role `authenticated`), jadi instalasi baru langsung aman — tidak ada langkah tambahan.
 3. Buat query baru lagi, salin isi `supabase/seed.sql`, lalu **Run**. Ini hanya mengisi kategori bawaan (Penjualan Offline, Penjualan Online, Pembelian Stok, Operasional, Gaji, Sewa, Listrik & Air, Marketing, Lainnya) — tidak ada data contoh sama sekali.
 4. Cek di menu **Table Editor**: harus terlihat tabel `users`, `categories`, `products`, `suppliers`, `sales`, `sale_items`, `purchases`, `purchase_items`, `expenses`, `cash_ledger`, `payables_receivables`.
+5. *(Opsional, untuk demo)* Jalankan `supabase/seed-contoh.sql` untuk mengisi data contoh — lihat bagian **Data Contoh** di bawah.
 
-> **Sudah pernah memasang skema versi lama (yang masih pakai login)?** Jangan jalankan `schema.sql` ulang. Cukup jalankan file `supabase/migration-002-no-auth.sql` **satu kali** di SQL Editor — file itu mengganti policy lama ("staf login boleh ...", khusus user login) menjadi policy terbuka ("akses terbuka ...") di semua tabel, supaya aplikasi tanpa login bisa membaca & menulis data.
+> **Database live Anda masih memakai policy terbuka (pernah menjalankan `migration-002-no-auth.sql`)?** Jangan jalankan `schema.sql` ulang. Cukup jalankan file `supabase/migration-003-restore-auth.sql` **satu kali** di SQL Editor — file itu menghapus 44 policy terbuka ("akses terbuka ...") dan membuat kembali 44 policy khusus user login ("staf login boleh ...") di semua tabel. Setelah itu data hanya bisa diakses staf yang sudah login. File ini aman dijalankan ulang (idempotent).
 
 ### 3. Ambil URL & Anon Key
 
@@ -99,7 +107,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Buka `http://localhost:3000` di browser. Anda **langsung masuk ke Beranda (dashboard)** — aplikasi ini tanpa login, tidak ada halaman masuk/daftar dan tidak perlu membuat akun apa pun. Tambahkan produk pertama lewat menu **Produk**, lalu mulai mencatat lewat **Kasir** / **Transaksi**.
+Buka `http://localhost:3000` di browser. Anda akan diarahkan ke **halaman Masuk**. Belum punya akun? Klik **Daftar di sini**, isi nama, email, dan kata sandi (akun pertama sebaiknya milik pemilik toko). Setelah masuk, Anda tiba di Beranda (peran kasir langsung diarahkan ke layar Kasir). Tambahkan produk pertama lewat menu **Produk**, lalu mulai mencatat lewat **Kasir** / **Transaksi**.
 
 ### 5. Deploy ke Vercel
 
@@ -110,8 +118,11 @@ Buka `http://localhost:3000` di browser. Anda **langsung masuk ke Beranda (dashb
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 4. Klik **Deploy**. Tunggu sampai selesai — aplikasi langsung live dengan alamat seperti `https://dankas-xxxx.vercel.app`.
 5. Setiap `git push` berikutnya akan otomatis men-deploy ulang.
-
-Tidak ada pengaturan Authentication yang perlu disetel di Supabase — aplikasi tidak memakai login sama sekali.
+6. **Penting (login):** di dashboard Supabase buka **Authentication → URL Configuration**, lalu isi:
+   - *Site URL*: alamat Vercel aplikasi Anda (cth. `https://danskas.vercel.app`)
+   - *Redirect URLs*: tambahkan `https://ALAMAT-ANDA.vercel.app/**`
+   
+   Tanpa ini, tautan konfirmasi email pendaftaran bisa mengarah ke alamat yang salah.
 
 ### 6. Push ke GitHub
 
@@ -127,6 +138,27 @@ git push -u origin main
 ```
 
 File `.env.local` **tidak** ikut ter-push (sudah dikecualikan oleh `.gitignore`) — kredensial Supabase Anda tetap aman.
+
+## Data Contoh (Opsional, untuk Demo)
+
+File `supabase/seed-contoh.sql` berisi data rekaaan bulan Oktober 2026 yang konsisten secara angka — berguna agar dashboard, grafik arus kas, buku kas, dan laporan langsung terlihat hidup saat pertama dicoba:
+
+- 6 kategori produk (Kaos, Kemeja, Celana, Dress, Hijab, Outer) & 2 supplier contoh
+- 10 produk pakaian (SKU `DL-KS-001` dst.) dengan stok akhir yang sudah memperhitungkan transaksi contoh
+- Saldo awal kas Rp5.000.000 (1 Okt), 8 penjualan (5–23 Okt, Tunai/QRIS/Transfer/E-Wallet), 1 pembelian stok, 5 pengeluaran (Sewa, Listrik & Air, Marketing, Operasional, Gaji) — semuanya lengkap dengan jurnal `cash_ledger` dan saldo berjalan yang benar. **Saldo akhir data contoh: Rp393.000.**
+
+**Memuat:** jalankan file itu **satu kali** di Supabase SQL Editor, *setelah* `schema.sql` dan `seed.sql`. Menjalankannya dua kali akan gagal di batas unik (SKU/nomor invoice) — itu disengaja.
+
+**Menghapus data contoh** (sebelum aplikasi dipakai sungguhan), jalankan di SQL Editor:
+
+```sql
+truncate table
+  public.sale_items, public.sales, public.purchase_items, public.purchases,
+  public.expenses, public.cash_ledger, public.products
+restart identity cascade;
+```
+
+Perintah ini mengosongkan seluruh transaksi & produk tetapi **mempertahankan kategori** (bawaan + kategori produk contoh; hapus manual lewat Table Editor bila tidak diperlukan) dan akun staf Anda.
 
 ## Logika Keuangan (sesuai dokumen perancangan)
 
