@@ -7,6 +7,10 @@
 -- ============================================================
 
 -- ---------- 1. users (profil staf, terhubung ke auth.users) ----------
+-- CATATAN: tabel & trigger ini dipertahankan hanya untuk
+-- kompatibilitas skema. UI aplikasi TIDAK memakai login dan tidak
+-- bergantung pada tabel ini; kolom user_id di sales/purchases/
+-- expenses selalu diisi null.
 create table if not exists public.users (
   id uuid primary key references auth.users (id) on delete cascade,
   name text not null,
@@ -206,9 +210,12 @@ create index if not exists idx_payrec_due on public.payables_receivables (due_da
 
 -- ============================================================
 -- ROW LEVEL SECURITY
--- Satu toko: semua staf yang sudah login (authenticated) boleh
--- mengakses semua data operasional. Policy ditulis eksplisit
--- untuk setiap tabel dan setiap operasi.
+-- Aplikasi ini TANPA LOGIN (keputusan pemilik toko): semua data
+-- operasional terbuka untuk role anon (kunci publik aplikasi)
+-- maupun authenticated. Policy ditulis eksplisit untuk setiap
+-- tabel dan setiap operasi. Konsekuensinya: siapa pun yang tahu
+-- alamat web + anon key bisa mengakses data — cocok untuk
+-- pemakaian internal toko, jangan sebarkan alamatnya ke publik.
 -- ============================================================
 
 alter table public.users enable row level security;
@@ -224,111 +231,111 @@ alter table public.cash_ledger enable row level security;
 alter table public.payables_receivables enable row level security;
 
 -- users
-create policy "staf login boleh membaca users" on public.users
-  for select to authenticated using (true);
-create policy "staf login boleh menambah users" on public.users
-  for insert to authenticated with check (true);
-create policy "staf login boleh mengubah users" on public.users
-  for update to authenticated using (true) with check (true);
-create policy "staf login boleh menghapus users" on public.users
-  for delete to authenticated using (true);
+create policy "akses terbuka membaca users" on public.users
+  for select to anon, authenticated using (true);
+create policy "akses terbuka menambah users" on public.users
+  for insert to anon, authenticated with check (true);
+create policy "akses terbuka mengubah users" on public.users
+  for update to anon, authenticated using (true) with check (true);
+create policy "akses terbuka menghapus users" on public.users
+  for delete to anon, authenticated using (true);
 
 -- categories
-create policy "staf login boleh membaca categories" on public.categories
-  for select to authenticated using (true);
-create policy "staf login boleh menambah categories" on public.categories
-  for insert to authenticated with check (true);
-create policy "staf login boleh mengubah categories" on public.categories
-  for update to authenticated using (true) with check (true);
-create policy "staf login boleh menghapus categories" on public.categories
-  for delete to authenticated using (true);
+create policy "akses terbuka membaca categories" on public.categories
+  for select to anon, authenticated using (true);
+create policy "akses terbuka menambah categories" on public.categories
+  for insert to anon, authenticated with check (true);
+create policy "akses terbuka mengubah categories" on public.categories
+  for update to anon, authenticated using (true) with check (true);
+create policy "akses terbuka menghapus categories" on public.categories
+  for delete to anon, authenticated using (true);
 
 -- suppliers
-create policy "staf login boleh membaca suppliers" on public.suppliers
-  for select to authenticated using (true);
-create policy "staf login boleh menambah suppliers" on public.suppliers
-  for insert to authenticated with check (true);
-create policy "staf login boleh mengubah suppliers" on public.suppliers
-  for update to authenticated using (true) with check (true);
-create policy "staf login boleh menghapus suppliers" on public.suppliers
-  for delete to authenticated using (true);
+create policy "akses terbuka membaca suppliers" on public.suppliers
+  for select to anon, authenticated using (true);
+create policy "akses terbuka menambah suppliers" on public.suppliers
+  for insert to anon, authenticated with check (true);
+create policy "akses terbuka mengubah suppliers" on public.suppliers
+  for update to anon, authenticated using (true) with check (true);
+create policy "akses terbuka menghapus suppliers" on public.suppliers
+  for delete to anon, authenticated using (true);
 
 -- products
-create policy "staf login boleh membaca products" on public.products
-  for select to authenticated using (true);
-create policy "staf login boleh menambah products" on public.products
-  for insert to authenticated with check (true);
-create policy "staf login boleh mengubah products" on public.products
-  for update to authenticated using (true) with check (true);
-create policy "staf login boleh menghapus products" on public.products
-  for delete to authenticated using (true);
+create policy "akses terbuka membaca products" on public.products
+  for select to anon, authenticated using (true);
+create policy "akses terbuka menambah products" on public.products
+  for insert to anon, authenticated with check (true);
+create policy "akses terbuka mengubah products" on public.products
+  for update to anon, authenticated using (true) with check (true);
+create policy "akses terbuka menghapus products" on public.products
+  for delete to anon, authenticated using (true);
 
 -- sales
-create policy "staf login boleh membaca sales" on public.sales
-  for select to authenticated using (true);
-create policy "staf login boleh menambah sales" on public.sales
-  for insert to authenticated with check (true);
-create policy "staf login boleh mengubah sales" on public.sales
-  for update to authenticated using (true) with check (true);
-create policy "staf login boleh menghapus sales" on public.sales
-  for delete to authenticated using (true);
+create policy "akses terbuka membaca sales" on public.sales
+  for select to anon, authenticated using (true);
+create policy "akses terbuka menambah sales" on public.sales
+  for insert to anon, authenticated with check (true);
+create policy "akses terbuka mengubah sales" on public.sales
+  for update to anon, authenticated using (true) with check (true);
+create policy "akses terbuka menghapus sales" on public.sales
+  for delete to anon, authenticated using (true);
 
 -- sale_items
-create policy "staf login boleh membaca sale_items" on public.sale_items
-  for select to authenticated using (true);
-create policy "staf login boleh menambah sale_items" on public.sale_items
-  for insert to authenticated with check (true);
-create policy "staf login boleh mengubah sale_items" on public.sale_items
-  for update to authenticated using (true) with check (true);
-create policy "staf login boleh menghapus sale_items" on public.sale_items
-  for delete to authenticated using (true);
+create policy "akses terbuka membaca sale_items" on public.sale_items
+  for select to anon, authenticated using (true);
+create policy "akses terbuka menambah sale_items" on public.sale_items
+  for insert to anon, authenticated with check (true);
+create policy "akses terbuka mengubah sale_items" on public.sale_items
+  for update to anon, authenticated using (true) with check (true);
+create policy "akses terbuka menghapus sale_items" on public.sale_items
+  for delete to anon, authenticated using (true);
 
 -- purchases
-create policy "staf login boleh membaca purchases" on public.purchases
-  for select to authenticated using (true);
-create policy "staf login boleh menambah purchases" on public.purchases
-  for insert to authenticated with check (true);
-create policy "staf login boleh mengubah purchases" on public.purchases
-  for update to authenticated using (true) with check (true);
-create policy "staf login boleh menghapus purchases" on public.purchases
-  for delete to authenticated using (true);
+create policy "akses terbuka membaca purchases" on public.purchases
+  for select to anon, authenticated using (true);
+create policy "akses terbuka menambah purchases" on public.purchases
+  for insert to anon, authenticated with check (true);
+create policy "akses terbuka mengubah purchases" on public.purchases
+  for update to anon, authenticated using (true) with check (true);
+create policy "akses terbuka menghapus purchases" on public.purchases
+  for delete to anon, authenticated using (true);
 
 -- purchase_items
-create policy "staf login boleh membaca purchase_items" on public.purchase_items
-  for select to authenticated using (true);
-create policy "staf login boleh menambah purchase_items" on public.purchase_items
-  for insert to authenticated with check (true);
-create policy "staf login boleh mengubah purchase_items" on public.purchase_items
-  for update to authenticated using (true) with check (true);
-create policy "staf login boleh menghapus purchase_items" on public.purchase_items
-  for delete to authenticated using (true);
+create policy "akses terbuka membaca purchase_items" on public.purchase_items
+  for select to anon, authenticated using (true);
+create policy "akses terbuka menambah purchase_items" on public.purchase_items
+  for insert to anon, authenticated with check (true);
+create policy "akses terbuka mengubah purchase_items" on public.purchase_items
+  for update to anon, authenticated using (true) with check (true);
+create policy "akses terbuka menghapus purchase_items" on public.purchase_items
+  for delete to anon, authenticated using (true);
 
 -- expenses
-create policy "staf login boleh membaca expenses" on public.expenses
-  for select to authenticated using (true);
-create policy "staf login boleh menambah expenses" on public.expenses
-  for insert to authenticated with check (true);
-create policy "staf login boleh mengubah expenses" on public.expenses
-  for update to authenticated using (true) with check (true);
-create policy "staf login boleh menghapus expenses" on public.expenses
-  for delete to authenticated using (true);
+create policy "akses terbuka membaca expenses" on public.expenses
+  for select to anon, authenticated using (true);
+create policy "akses terbuka menambah expenses" on public.expenses
+  for insert to anon, authenticated with check (true);
+create policy "akses terbuka mengubah expenses" on public.expenses
+  for update to anon, authenticated using (true) with check (true);
+create policy "akses terbuka menghapus expenses" on public.expenses
+  for delete to anon, authenticated using (true);
 
 -- cash_ledger
-create policy "staf login boleh membaca cash_ledger" on public.cash_ledger
-  for select to authenticated using (true);
-create policy "staf login boleh menambah cash_ledger" on public.cash_ledger
-  for insert to authenticated with check (true);
-create policy "staf login boleh mengubah cash_ledger" on public.cash_ledger
-  for update to authenticated using (true) with check (true);
-create policy "staf login boleh menghapus cash_ledger" on public.cash_ledger
-  for delete to authenticated using (true);
+create policy "akses terbuka membaca cash_ledger" on public.cash_ledger
+  for select to anon, authenticated using (true);
+create policy "akses terbuka menambah cash_ledger" on public.cash_ledger
+  for insert to anon, authenticated with check (true);
+create policy "akses terbuka mengubah cash_ledger" on public.cash_ledger
+  for update to anon, authenticated using (true) with check (true);
+create policy "akses terbuka menghapus cash_ledger" on public.cash_ledger
+  for delete to anon, authenticated using (true);
 
 -- payables_receivables
-create policy "staf login boleh membaca payables_receivables" on public.payables_receivables
-  for select to authenticated using (true);
-create policy "staf login boleh menambah payables_receivables" on public.payables_receivables
-  for insert to authenticated with check (true);
-create policy "staf login boleh mengubah payables_receivables" on public.payables_receivables
-  for update to authenticated using (true) with check (true);
-create policy "staf login boleh menghapus payables_receivables" on public.payables_receivables
-  for delete to authenticated using (true);
+create policy "akses terbuka membaca payables_receivables" on public.payables_receivables
+  for select to anon, authenticated using (true);
+create policy "akses terbuka menambah payables_receivables" on public.payables_receivables
+  for insert to anon, authenticated with check (true);
+create policy "akses terbuka mengubah payables_receivables" on public.payables_receivables
+  for update to anon, authenticated using (true) with check (true);
+create policy "akses terbuka menghapus payables_receivables" on public.payables_receivables
+  for delete to anon, authenticated using (true);

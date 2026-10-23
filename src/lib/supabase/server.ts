@@ -19,8 +19,8 @@ export async function createClient() {
               cookieStore.set(name, value, options)
             );
           } catch {
-            // Dipanggil dari Server Component — aman diabaikan karena
-            // sesi diperbarui oleh middleware.
+            // Dipanggil dari Server Component — aman diabaikan.
+            // Aplikasi ini tanpa login, jadi tidak ada sesi yang ditulis.
           }
         },
       },

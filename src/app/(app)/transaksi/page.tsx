@@ -66,13 +66,10 @@ export default function TransaksiPage() {
 
     try {
       if (mode === "pengeluaran") {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
         const { data: expense, error: expError } = await supabase
           .from("expenses")
           .insert({
-            user_id: user?.id ?? null,
+            user_id: null, // tanpa login: pengeluaran tidak terikat user mana pun
             category_id: categoryId ? Number(categoryId) : null,
             title: title.trim(),
             amount: nominal,

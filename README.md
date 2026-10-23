@@ -10,13 +10,13 @@ Dibangun mengikuti dokumen *Perancangan Aplikasi Sistem Pencatatan Keuangan pada
 | --- | --- |
 | Framework | Next.js (App Router) + React + TypeScript |
 | Tampilan | Tailwind CSS, mobile-first (bottom tab bar di HP, sidebar di desktop) |
-| Database & Login | Supabase (PostgreSQL + Auth), Row Level Security aktif |
-| Akses data | `@supabase/supabase-js` + `@supabase/ssr` |
+| Database | Supabase (PostgreSQL), Row Level Security aktif dengan policy terbuka (tanpa login) |
+| Akses data | `@supabase/supabase-js` + `@supabase/ssr` (anon key, tanpa sesi login) |
 | Deploy | Vercel |
 
 ## Fitur
 
-- **Login / Daftar** — Supabase Auth, route aplikasi terproteksi, peran staf (Pemilik / Admin / Kasir) di tabel `users`
+- **Tanpa login** — buka alamat web, langsung masuk ke Beranda. Tidak ada halaman masuk/daftar dan tidak ada akun staf; semua halaman terbuka langsung
 - **Beranda** — saldo kas dari buku kas, pemasukan & pengeluaran hari ini dan bulan ini, laba bersih bulan ini, transaksi terakhir, peringatan stok menipis, panduan 3 langkah saat data masih kosong
 - **Kasir** — pilih produk, keranjang, diskon, metode bayar (Tunai / QRIS / Transfer / E-Wallet), kembalian otomatis, nomor invoice `INV-YYYYMMDD-XXX`; stok berkurang otomatis, HPP tercatat dari snapshot harga modal, jurnal kas tertulis otomatis
 - **Transaksi** — catat pengeluaran operasional berkategori dan pemasukan lain; keduanya langsung masuk buku kas
@@ -24,6 +24,8 @@ Dibangun mengikuti dokumen *Perancangan Aplikasi Sistem Pencatatan Keuangan pada
 - **Buku Kas** — jurnal `cash_ledger` dengan saldo berjalan, filter periode (hari ini, bulan ini, bulan lalu, tanggal bebas)
 - **Laporan** — laba rugi (Penjualan − HPP − Pengeluaran + Pemasukan Lain) dan arus kas per bulan, pengeluaran dirinci per kategori
 - **PWA** — bisa dipasang ke layar utama HP (manifest + ikon + service worker sederhana)
+
+> ⚠️ **Catatan jujur soal keamanan:** karena aplikasi ini tanpa login, **siapa pun yang tahu alamat web aplikasi ini bisa membuka dan mengubah data keuangan toko** (anon key Supabase memang ikut terbawa di aplikasi web dan bisa dilihat publik). Ini pilihan yang disengaja supaya staf toko tidak repot login, dan cocok untuk **pemakaian internal toko**. Karena itu: **jangan sebarkan alamat webnya ke publik** (jangan diposting di media sosial, jangan dicantumkan di materi promosi), dan perlakukan alamatnya seperti kunci toko.
 
 ## Struktur Folder
 
@@ -34,18 +36,18 @@ dankas/
 │   ├── icons/                 # ikon aplikasi (placeholder, silakan ganti logo asli)
 │   └── sw.js                  # service worker sederhana
 ├── supabase/
-│   ├── schema.sql             # 11 tabel + RLS + trigger profil otomatis
-│   └── seed.sql               # HANYA kategori bawaan (tanpa data contoh)
+│   ├── schema.sql             # 11 tabel + RLS policy terbuka (tanpa login)
+│   ├── seed.sql               # HANYA kategori bawaan (tanpa data contoh)
+│   └── migration-002-no-auth.sql # untuk instalasi LAMA: ganti policy login → terbuka (jalankan sekali)
 └── src/
-    ├── proxy.ts               # proteksi route & perbarui sesi (konvensi Next.js 16)
     ├── lib/
-    │   ├── supabase/          # client browser, server, dan middleware
+    │   ├── supabase/          # client browser & server (anon key, tanpa sesi)
     │   ├── ledger.ts          # hitung saldo & tulis jurnal buku kas
     │   ├── format.ts          # format Rupiah & tanggal (id-ID)
     │   └── types.ts           # tipe data tabel
     ├── components/            # AppShell (navigasi), ServiceWorkerRegister
     └── app/
-        ├── login/ & register/ # halaman masuk & daftar
+        ├── page.tsx           # akar web → langsung alihkan ke /dashboard
         └── (app)/             # dashboard, kasir, transaksi, produk, buku-kas, laporan
 ```
 
@@ -65,9 +67,11 @@ dankas/
 ### 2. Jalankan Skema Database
 
 1. Di dashboard Supabase, buka menu **SQL Editor** → **New query**.
-2. Buka file `supabase/schema.sql` dari proyek ini, salin **seluruh isinya**, tempel ke SQL Editor, lalu klik **Run**. Tunggu sampai muncul pesan sukses (11 tabel + policy RLS + trigger dibuat).
+2. Buka file `supabase/schema.sql` dari proyek ini, salin **seluruh isinya**, tempel ke SQL Editor, lalu klik **Run**. Tunggu sampai muncul pesan sukses (11 tabel + policy RLS dibuat). Skema ini **sudah termasuk policy terbuka (tanpa login)**, jadi instalasi baru langsung jalan — tidak ada langkah tambahan.
 3. Buat query baru lagi, salin isi `supabase/seed.sql`, lalu **Run**. Ini hanya mengisi kategori bawaan (Penjualan Offline, Penjualan Online, Pembelian Stok, Operasional, Gaji, Sewa, Listrik & Air, Marketing, Lainnya) — tidak ada data contoh sama sekali.
 4. Cek di menu **Table Editor**: harus terlihat tabel `users`, `categories`, `products`, `suppliers`, `sales`, `sale_items`, `purchases`, `purchase_items`, `expenses`, `cash_ledger`, `payables_receivables`.
+
+> **Sudah pernah memasang skema versi lama (yang masih pakai login)?** Jangan jalankan `schema.sql` ulang. Cukup jalankan file `supabase/migration-002-no-auth.sql` **satu kali** di SQL Editor — file itu mengganti policy lama ("staf login boleh ...", khusus user login) menjadi policy terbuka ("akses terbuka ...") di semua tabel, supaya aplikasi tanpa login bisa membaca & menulis data.
 
 ### 3. Ambil URL & Anon Key
 
@@ -95,9 +99,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Buka `http://localhost:3000` di browser. Anda akan diarahkan ke halaman masuk — klik **Daftar di sini**, buat akun pertama (akun ini menjadi staf pertama; perannya dapat diubah menjadi Pemilik lewat Supabase → Table Editor → tabel `users` → kolom `role`).
-
-> Catatan email verifikasi: bila pendaftaran meminta verifikasi email, klik tautan di email Anda. Untuk pemakaian internal, verifikasi bisa dimatikan lewat Supabase → **Authentication** → **Providers** → **Email** → matikan *Confirm email*.
+Buka `http://localhost:3000` di browser. Anda **langsung masuk ke Beranda (dashboard)** — aplikasi ini tanpa login, tidak ada halaman masuk/daftar dan tidak perlu membuat akun apa pun. Tambahkan produk pertama lewat menu **Produk**, lalu mulai mencatat lewat **Kasir** / **Transaksi**.
 
 ### 5. Deploy ke Vercel
 
@@ -109,7 +111,7 @@ Buka `http://localhost:3000` di browser. Anda akan diarahkan ke halaman masuk �
 4. Klik **Deploy**. Tunggu sampai selesai — aplikasi langsung live dengan alamat seperti `https://dankas-xxxx.vercel.app`.
 5. Setiap `git push` berikutnya akan otomatis men-deploy ulang.
 
-Agar tautan verifikasi email & redirect login selalu benar, di Supabase buka **Authentication → URL Configuration** dan isi *Site URL* dengan alamat Vercel Anda.
+Tidak ada pengaturan Authentication yang perlu disetel di Supabase — aplikasi tidak memakai login sama sekali.
 
 ### 6. Push ke GitHub
 

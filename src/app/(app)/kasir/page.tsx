@@ -105,10 +105,6 @@ export default function KasirPage() {
     const today = todayISO();
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
       // Nomor invoice: INV-YYYYMMDD-XXX (XXX = urutan penjualan hari ini)
       const { count } = await supabase
         .from("sales")
@@ -121,7 +117,7 @@ export default function KasirPage() {
         .from("sales")
         .insert({
           invoice_no: invoiceNo,
-          user_id: user?.id ?? null,
+          user_id: null, // tanpa login: penjualan tidak terikat user mana pun
           customer_name: customerName.trim() || null,
           subtotal,
           discount,

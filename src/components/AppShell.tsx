@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { usePathname } from "next/navigation";
 
 const TABS = [
   {
@@ -66,22 +64,6 @@ function TabIcon({ children }: { children: React.ReactNode }) {
 // melebar di desktop (mobile-first).
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [email, setEmail] = useState<string>("");
-
-  useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => {
-      setEmail(data.user?.email ?? "");
-    });
-  }, []);
-
-  async function handleLogout() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
-  }
 
   return (
     <div className="min-h-dvh md:flex">
@@ -115,13 +97,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <div className="border-t border-zinc-800 px-5 py-4">
-          <p className="truncate text-xs text-zinc-400">{email}</p>
-          <button
-            onClick={handleLogout}
-            className="mt-2 text-sm font-medium text-zinc-200 underline-offset-2 hover:underline"
-          >
-            Keluar
-          </button>
+          <p className="text-xs text-zinc-400">
+            DAN&apos;S LABEL — Surakarta
+          </p>
         </div>
       </aside>
 
@@ -137,12 +115,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               DAN&apos;S LABEL — Surakarta
             </p>
           </div>
-          <button
-            onClick={handleLogout}
-            className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-medium"
-          >
-            Keluar
-          </button>
         </header>
 
         <main className="flex-1 px-4 pb-24 pt-4 md:px-6 md:pb-10 md:pt-6">
