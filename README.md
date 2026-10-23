@@ -143,9 +143,9 @@ File `.env.local` **tidak** ikut ter-push (sudah dikecualikan oleh `.gitignore`)
 
 File `supabase/seed-contoh.sql` berisi data rekaaan bulan Oktober 2026 yang konsisten secara angka — berguna agar dashboard, grafik arus kas, buku kas, dan laporan langsung terlihat hidup saat pertama dicoba:
 
-- 6 kategori produk (Kaos, Kemeja, Celana, Dress, Hijab, Outer) & 2 supplier contoh
-- 10 produk pakaian (SKU `DL-KS-001` dst.) dengan stok akhir yang sudah memperhitungkan transaksi contoh
-- Saldo awal kas Rp5.000.000 (1 Okt), 8 penjualan (5–23 Okt, Tunai/QRIS/Transfer/E-Wallet), 1 pembelian stok, 5 pengeluaran (Sewa, Listrik & Air, Marketing, Operasional, Gaji) — semuanya lengkap dengan jurnal `cash_ledger` dan saldo berjalan yang benar. **Saldo akhir data contoh: Rp393.000.**
+- 7 kategori produk mengikuti barang asli toko (Daster, Oneset, Atasan, Celana, Piyama, Jilbab, Cardigan) & 2 supplier contoh
+- 12 produk pakaian (SKU `DL-DS-001` dst.) dengan stok akhir yang sudah memperhitungkan transaksi contoh
+- Saldo awal kas Rp5.000.000 (1 Okt), 8 penjualan (5–23 Okt, Tunai/QRIS/Transfer/E-Wallet), 1 pembelian stok, 5 pengeluaran (Sewa, Listrik & Air, Marketing, Operasional, Gaji) — semuanya lengkap dengan jurnal `cash_ledger` dan saldo berjalan yang benar. **Saldo akhir data contoh: Rp425.000.**
 
 **Memuat:** jalankan file itu **satu kali** di Supabase SQL Editor, *setelah* `schema.sql` dan `seed.sql`. Menjalankannya dua kali akan gagal di batas unik (SKU/nomor invoice) — itu disengaja.
 
